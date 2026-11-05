@@ -100,4 +100,67 @@ class ParcelServiceTest {
                 .isInstanceOf(ParcelNotFoundException.class)
                 .hasMessageContaining(idInexistente.toString());
     }
+
+    // ------------------------------------------------------------ create
+
+    @Test
+    @DisplayName("create guarda la parcela, limpia el nombre y conserva los atributos")
+    void create_datosValidos_guardaLaParcela() {
+        UUID idGenerado = UUID.randomUUID();
+        when(parcelRepository.existsByNameIgnoreCase("Huerto Norte")).thenReturn(false);
+        // Simula lo que haría la base de datos: asignar el identificador al guardar
+        when(parcelRepository.save(any(Parcel.class))).thenAnswer(invocacion -> {
+            Parcel guardada = invocacion.getArgument(0);
+            guardada.setId(idGenerado);
+            return guardada;
+        });
+
+        Parcel entrada = new Parcel("  Huerto Norte  ", "arcilloso", "Ana López");
+        Parcel creada = parcelService.create(entrada);
+
+        // Se verifica lo que recibió el repositorio
+        ArgumentCaptor<Parcel> captor = ArgumentCaptor.forClass(Parcel.class);
+        verify(parcelRepository).save(captor.capture());
+        assertThat(captor.getValue().getName()).isEqualTo("Huerto Norte");
+
+        // Se verifica lo que devolvió el servicio
+        assertThat(creada.getId()).isEqualTo(idGenerado);
+        assertThat(creada.getName()).isEqualTo("Huerto Norte");
+        assertThat(creada.getSoilType()).isEqualTo("arcilloso");
+        assertThat(creada.getOwnerOrLead()).isEqualTo("Ana López");
+    }
+
+    @Test
+    @DisplayName("create lanza DuplicateParcelException si el nombre ya existe y no guarda")
+    void create_nombreDuplicado_lanzaExcepcionYNoGuarda() {
+        when(parcelRepository.existsByNameIgnoreCase("Huerto Norte")).thenReturn(true);
+
+        Parcel entrada = new Parcel("Huerto Norte", "arcilloso", "Ana López");
+
+        assertThatThrownBy(() -> parcelService.create(entrada))
+                .isInstanceOf(DuplicateParcelException.class)
+                .hasMessageContaining("Huerto Norte");
+        verify(parcelRepository, never()).save(any(Parcel.class));
+    }
+
+    @ParameterizedTest(name = "create rechaza el nombre [{0}]")
+    @NullAndEmptySource
+    @ValueSource(strings = {" ", "   "})
+    @DisplayName("create rechaza nombres nulos o vacíos sin tocar el repositorio")
+    void create_nombreInvalido_lanzaExcepcion(String nombre) {
+        Parcel entrada = new Parcel(nombre, "arcilloso", "Ana López");
+
+        assertThatThrownBy(() -> parcelService.create(entrada))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("obligatorio");
+        verifyNoInteractions(parcelRepository);
+    }
+
+    @Test
+    @DisplayName("create rechaza una parcela nula")
+    void create_parcelaNula_lanzaExcepcion() {
+        assertThatThrownBy(() -> parcelService.create(null))
+                .isInstanceOf(IllegalArgumentException.class);
+        verifyNoInteractions(parcelRepository);
+    }
 }
